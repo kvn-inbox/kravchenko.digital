@@ -61,10 +61,8 @@ function renderSmartInvestCards(reports) {
   if (!container) return;
   container.innerHTML = reports.map(r => `
     <div class="latest-card fade-up">
-      <div class="latest-thumb">
-        <div class="latest-thumb-icon">
-          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.5" fill="none"/><circle cx="12" cy="12" r="4" fill="currentColor"/></svg>
-        </div>
+      <div class="latest-thumb latest-thumb-ticker">
+        <span class="ticker-text">${r.ticker}</span>
       </div>
       <div class="latest-info">
         <div class="latest-meta">${r.ticker} · ${r.company_name}</div>
@@ -80,18 +78,38 @@ function renderSmartInvestCards(reports) {
 /* ─── Latest: YouTube RSS ─── */
 const YT_CHANNEL = 'UCSFX-Et9bJWWpSV-qvCHSCg';
 const YT_RSS = `https://www.youtube.com/feeds/videos.xml?channel_id=${YT_CHANNEL}`;
-const CORS_PROXY = 'https://api.allorigins.win/get?url=';
 const YT_CHANNEL_URL = 'https://youtube.com/@kravchenko_invest';
+const CORS_PROXIES = [
+  url => `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
+  url => `https://corsproxy.io/?${encodeURIComponent(url)}`,
+  url => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+];
+
+async function fetchViaProxy(url) {
+  for (const makeProxy of CORS_PROXIES) {
+    try {
+      const res = await fetch(makeProxy(url), { signal: AbortSignal.timeout(5000) });
+      if (!res.ok) continue;
+      const text = await res.text();
+      // allorigins wraps in JSON, others return raw XML
+      try {
+        const json = JSON.parse(text);
+        return json.contents || json;
+      } catch {
+        return text;
+      }
+    } catch { /* try next proxy */ }
+  }
+  throw new Error('all proxies failed');
+}
 
 async function loadYouTube() {
   const container = document.getElementById('latest-yt');
   if (!container) return;
   try {
-    const res = await fetch(CORS_PROXY + encodeURIComponent(YT_RSS));
-    if (!res.ok) throw new Error('yt rss error');
-    const json = await res.json();
+    const raw = await fetchViaProxy(YT_RSS);
     const parser = new DOMParser();
-    const xml = parser.parseFromString(json.contents, 'text/xml');
+    const xml = parser.parseFromString(raw, 'text/xml');
     const entries = Array.from(xml.querySelectorAll('entry')).slice(0, 2);
     if (!entries.length) throw new Error('no entries');
 
